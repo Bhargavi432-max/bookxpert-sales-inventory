@@ -1,0 +1,59 @@
+name: bookxpert-sales-inventory
+
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: sales_inventory
+      MYSQL_USER: bookxpert
+      MYSQL_PASSWORD: bookxpert
+      MYSQL_ROOT_PASSWORD: rootpassword
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--default-time-zone=+00:00"]
+    ports:
+      - "3310:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      # 127.0.0.1 (TCP) only answers once init has finished, unlike the socket.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ubookxpert", "-pbookxpert"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025" # web inbox
+      - "1025:1025" # SMTP
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: mysql+pymysql://bookxpert:bookxpert@db:3306/sales_inventory
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-0b7c5f2e9a1d4}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:5174"]'
+      DEFAULT_APPROVAL_THRESHOLD: ${APPROVAL_THRESHOLD:-50000}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
+      SMTP_FROM: ${SMTP_FROM:-BookXpert Sales <no-reply@bookxpert.local>}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  web:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  mysql_data:
